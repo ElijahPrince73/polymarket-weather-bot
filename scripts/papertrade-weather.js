@@ -14,7 +14,20 @@ const CITIES = [
 
 const SEARCH_TERMS = ['temperature', 'rain', 'precipitation', 'snow', 'wind'];
 
-const BANKROLL = 100;
+// --- Trading config ---
+const BASE_BANKROLL = 100;
+
+// Hard filters (avoid low-quality trades)
+const MIN_EDGE = 0.03;           // require at least +3% model edge
+const MIN_PRICE = 0.03;          // avoid extreme tails
+const MAX_PRICE = 0.97;
+const MIN_HOURS_TO_CLOSE = 3;    // avoid last-minute markets
+
+// Risk management
+const MAX_DAILY_EXPOSURE_PCT = 0.05; // cap total open stake for today's date
+const MAX_CITY_EXPOSURE_PCT = 0.02;  // cap open stake per city/date
+const STOP_DAILY_DD_PCT = 0.05;      // if today's realized PnL <= -5% bankroll, stop opening new trades
+
 
 function fmtDateInTz(tz) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -109,8 +122,7 @@ async function ensureNotionSchema() {
     Edge: { number: { format: 'number' } },
     SizePct: { number: { format: 'percent' } },
     StakeUsd: { number: { format: 'number' } },
-    Status: { select: { options: [{name:'PAPER_OPEN'},{name:'PAPER_SKIP'},{name:'PAPER_SWITCHED'}] } },
-    Source: { select: { options: [{name:'Open-Meteo'}] } },
+    Status: { select: { options: [{name:'PAPER_OPEN'},{name:'PAPER_SKIP'},{name:'PAPER_SWITCHED'},{name:'PAPER_STOP'}] } },
     Notes: { rich_text: {} },
     Row: { number: { format: 'number' } },
   };
@@ -257,27 +269,65 @@ async function main() {
 
   const logs = [];
 
-  // preload open trades by city
-  const openByCityDate = new Set();
-  {
-    const resp = await fetchJson(`https://api.notion.com/v1/data_sources/${DATA_SOURCE_ID}/query`, {
+  // Pull existing rows once to support bankroll + exposure caps.
+  let cursor = null;
+  const allRows = [];
+  do {
+    const body = { page_size: 100 };
+    if (cursor) body.start_cursor = cursor;
+    const data = await fetchJson(`https://api.notion.com/v1/data_sources/${DATA_SOURCE_ID}/query`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${NOTION_KEY}`,
         'Notion-Version': NOTION_VERSION,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        filter: { property: 'Status', select: { equals: 'PAPER_OPEN' } },
-        page_size: 100
-      })
+      body: JSON.stringify(body)
     });
-    for (const p of resp.results || []) {
-      const cityName = p.properties?.City?.select?.name;
-      const date = p.properties?.EventDate?.date?.start;
-      if (!cityName || !date) continue;
-      openByCityDate.add(`${cityName}|${date}`);
+    allRows.push(...(data.results || []));
+    cursor = data.has_more ? data.next_cursor : null;
+  } while (cursor);
+
+  const bankrollFromNotion = allRows.reduce((acc, r) => {
+    const result = r.properties?.Result?.select?.name;
+    const pnl = r.properties?.PnL?.number;
+    if ((result === 'WIN' || result === 'LOSS') && typeof pnl === 'number') return acc + pnl;
+    return acc;
+  }, 0);
+
+  const bankroll = BASE_BANKROLL + bankrollFromNotion;
+
+  // Today's realized PnL (stop trading if we hit daily drawdown)
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const todaysRealizedPnl = allRows.reduce((acc, r) => {
+    const result = r.properties?.Result?.select?.name;
+    const resolvedAt = r.properties?.ResolvedAt?.date?.start;
+    const pnl = r.properties?.PnL?.number;
+    if ((result === 'WIN' || result === 'LOSS') && resolvedAt && resolvedAt.slice(0, 10) === todayIso && typeof pnl === 'number') {
+      return acc + pnl;
     }
+    return acc;
+  }, 0);
+
+  const stopForDay = todaysRealizedPnl <= -STOP_DAILY_DD_PCT * bankroll;
+
+  // preload open trades by city/date + current exposures
+  const openByCityDate = new Set();
+  const openStakeByCityDate = new Map();
+  const openStakeToday = new Map(); // key: YYYY-MM-DD, value: total stake
+
+  for (const p of allRows) {
+    const status = p.properties?.Status?.select?.name;
+    if (status !== 'PAPER_OPEN') continue;
+    const cityName = p.properties?.City?.select?.name;
+    const date = p.properties?.EventDate?.date?.start;
+    const stake = p.properties?.StakeUsd?.number ?? 0;
+    if (!cityName || !date) continue;
+
+    const key = `${cityName}|${date}`;
+    openByCityDate.add(key);
+    openStakeByCityDate.set(key, (openStakeByCityDate.get(key) || 0) + stake);
+    openStakeToday.set(date, (openStakeToday.get(date) || 0) + stake);
   }
 
   for (const city of CITIES) {
@@ -394,15 +444,41 @@ async function main() {
         let edge = null;
 
         const url = event.slug ? `https://polymarket.com/event/${event.slug}` : null;
+
+        // Guardrail: avoid markets too close to close
+        if (event.endDate) {
+          const hrs = (new Date(event.endDate).getTime() - Date.now()) / 36e5;
+          if (Number.isFinite(hrs) && hrs >= 0 && hrs < MIN_HOURS_TO_CLOSE) continue;
+        }
+
         if (edgeYes > edgeNo) { side = 'YES'; price = yesPrice; edge = edgeYes; }
         else { side = 'NO'; price = noPrice; edge = edgeNo; }
 
-        // no minimum edge threshold; always pick best available
+        // Guardrail: avoid extreme tail prices
+        if (price != null && (price < MIN_PRICE || price > MAX_PRICE)) continue;
 
-        const sizePct = edge >= 0.1 ? 0.02 : 0.01;
-        const stake = BANKROLL * sizePct;
+        // Only take trades with sufficient positive edge
+        if (edge == null || edge < MIN_EDGE) continue;
 
-        const candidate = { city: city.name, q, date: dateStr || localDate, status: 'PAPER_OPEN', side, price, modelProb, edge, sizePct, stake, notes, url, yesPrice, noPrice, station: city.station?.code || '' };
+        // Risk: daily/city exposure caps
+        const sizePct = edge >= 0.10 ? 0.02 : (edge >= 0.05 ? 0.015 : 0.01);
+        let stake = bankroll * sizePct;
+
+        const candidateDate = dateStr || localDate;
+        const cityDateKey = `${city.name}|${candidateDate}`;
+
+        const dailyCap = bankroll * MAX_DAILY_EXPOSURE_PCT;
+        const cityCap = bankroll * MAX_CITY_EXPOSURE_PCT;
+        const alreadyDaily = openStakeToday.get(candidateDate) || 0;
+        const alreadyCity = openStakeByCityDate.get(cityDateKey) || 0;
+        const remainingDaily = Math.max(0, dailyCap - alreadyDaily);
+        const remainingCity = Math.max(0, cityCap - alreadyCity);
+        stake = Math.max(0, Math.min(stake, remainingDaily, remainingCity));
+
+        if (stopForDay) continue;
+        if (stake <= 0.0001) continue;
+
+        const candidate = { city: city.name, q, date: candidateDate, status: 'PAPER_OPEN', side, price, modelProb, edge, sizePct, stake, notes, url, yesPrice, noPrice, station: city.station?.code || '' };
         const key = candidate.date;
         const existingBest = bestByDate.get(key);
         if (!existingBest || candidate.edge > existingBest.edge) bestByDate.set(key, candidate);
@@ -435,7 +511,6 @@ async function main() {
         MarketURL: { url: log.url ?? null },
         EventDate: { date: { start: log.date } },
         Status: { select: { name: log.status } },
-        Source: { select: { name: 'Open-Meteo' } },
         Notes: { rich_text: [{ text: { content: log.notes ?? '' } }] },
       }
     };

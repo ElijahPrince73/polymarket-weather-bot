@@ -117,7 +117,6 @@ async function main(){
       body: JSON.stringify({
         properties:{
           Result:{ select:{ name: win ? 'WIN' : 'LOSS' } },
-          ResolvedValue:{ number: resolved.val },
           ResolvedAt:{ date:{ start: new Date().toISOString() } },
           ...(pnl == null ? {} : { PnL: { number: pnl } })
         }

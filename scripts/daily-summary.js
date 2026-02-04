@@ -30,6 +30,14 @@ async function main(){
   } while(cursor);
 
   const perCity = {};
+  const edgeBuckets = [
+    { name: '<3%', min: -Infinity, max: 0.03 },
+    { name: '3-5%', min: 0.03, max: 0.05 },
+    { name: '5-10%', min: 0.05, max: 0.10 },
+    { name: '10%+', min: 0.10, max: Infinity }
+  ];
+  const perBucket = Object.fromEntries(edgeBuckets.map(b => [b.name, { trades:0, pnl:0 } ]));
+
   for(const r of rows){
     const status = r.properties?.Status?.select?.name;
     if(status !== 'PAPER_OPEN') continue;
@@ -43,6 +51,7 @@ async function main(){
     const price = r.properties?.EntryPrice?.number ?? null;
     const stake = r.properties?.StakeUsd?.number ?? null;
     const q = r.properties?.Question?.rich_text?.[0]?.plain_text || '';
+    const edge = r.properties?.Edge?.number ?? null;
 
     if(price == null || stake == null) continue;
 
@@ -50,6 +59,14 @@ async function main(){
     if(result === 'WIN') pnl = stake * (1/price - 1);
     else if(result === 'LOSS') pnl = -stake;
     else continue;
+
+    if(typeof edge === 'number'){
+      const bucket = edgeBuckets.find(b => edge >= b.min && edge < b.max)?.name;
+      if(bucket){
+        perBucket[bucket].trades += 1;
+        perBucket[bucket].pnl += pnl;
+      }
+    }
 
     if(!perCity[abbr]) perCity[abbr] = { wins:0, losses:0, pnl:0, trades:0, winList:[], lossList:[] };
     perCity[abbr].trades += 1;
@@ -70,6 +87,17 @@ async function main(){
     console.log('No resolved trades today.');
     return;
   }
+
+  // Edge bucket performance
+  lines.push('');
+  lines.push('Edge buckets:');
+  for(const b of edgeBuckets){
+    const v = perBucket[b.name];
+    if(!v.trades) continue;
+    const sign = v.pnl >= 0 ? '+' : '';
+    lines.push(`  ${b.name}: trades ${v.trades}, PnL ${sign}${v.pnl.toFixed(2)}`);
+  }
+
   console.log(lines.join('\n'));
 }
 

@@ -103,7 +103,6 @@ async function clobPrice(tokenId){
             Edge:{number:edgeOpp},
             SizePct:{number:r.properties?.SizePct?.number||0.01},
             StakeUsd:{number:r.properties?.StakeUsd?.number||1},
-            Source:{select:{name:'Open-Meteo'}},
             Station:{rich_text:[{text:{content:r.properties?.Station?.rich_text?.[0]?.plain_text||''}}]},
             Notes:{rich_text:[{text:{content:`Switch from ${side}`}}]}
           }
