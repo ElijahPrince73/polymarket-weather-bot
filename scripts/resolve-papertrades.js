@@ -68,7 +68,8 @@ async function main(){
   for(const p of pages){
     const status = p.properties?.Status?.select?.name;
     const result = p.properties?.Result?.select?.name;
-    if(status !== 'PAPER_OPEN') continue;
+    const RESOLVE_STATUSES = new Set(['PAPER_OPEN','PAPER_STOP','PAPER_SWITCHED']);
+    if(!RESOLVE_STATUSES.has(status)) continue;
     if(result && result !== 'PENDING') continue;
 
     const q = p.properties?.Question?.rich_text?.[0]?.plain_text;
