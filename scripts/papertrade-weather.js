@@ -458,7 +458,9 @@ async function main() {
     });
   }
 
-  console.log(`Logged ${logs.length} items.`);
+  // Save logs to a local file for easier access
+  fs.writeFileSync('../trades.json', JSON.stringify(logs, null, 2));
+  console.log(`Logged ${logs.length} items to Notion and saved to trades.json.`);
 }
 
 main().catch(err => {

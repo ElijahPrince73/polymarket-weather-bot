@@ -74,6 +74,8 @@ async function main(){
     const q = p.properties?.Question?.rich_text?.[0]?.plain_text;
     const side = p.properties?.Side?.select?.name;
     const url = p.properties?.MarketURL?.url;
+    const entryPrice = p.properties?.EntryPrice?.number;
+    const stake = p.properties?.StakeUsd?.number;
     const slug = extractEventSlug(url);
     if(!slug || !q || !side) continue;
 
@@ -104,6 +106,10 @@ async function main(){
       calib[key] = { bias, updatedAt: new Date().toISOString() };
     }
 
+    const pnl = (entryPrice != null && stake != null)
+      ? (win ? (stake * (1/entryPrice - 1)) : -stake)
+      : null;
+
     await fetchJson(`https://api.notion.com/v1/pages/${p.id}`,{
       method:'PATCH',
       headers:{Authorization:`Bearer ${NOTION_KEY}`,'Notion-Version':NOTION_VERSION,'Content-Type':'application/json'},
@@ -111,7 +117,8 @@ async function main(){
         properties:{
           Result:{ select:{ name: win ? 'WIN' : 'LOSS' } },
           ResolvedValue:{ number: resolved.val },
-          ResolvedAt:{ date:{ start: new Date().toISOString() } }
+          ResolvedAt:{ date:{ start: new Date().toISOString() } },
+          ...(pnl == null ? {} : { PnL: { number: pnl } })
         }
       })
     });

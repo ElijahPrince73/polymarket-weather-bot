@@ -40,7 +40,7 @@ async function main(){
     const city = r.properties?.City?.select?.name || 'Unknown';
     const abbr = CITY_ABBR[city] || city;
     const side = r.properties?.Side?.select?.name || '';
-    const price = r.properties?.Price?.number ?? null;
+    const price = r.properties?.EntryPrice?.number ?? null;
     const stake = r.properties?.StakeUsd?.number ?? null;
     const q = r.properties?.Question?.rich_text?.[0]?.plain_text || '';
 
