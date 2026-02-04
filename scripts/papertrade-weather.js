@@ -112,6 +112,7 @@ async function ensureNotionSchema() {
     Status: { select: { options: [{name:'PAPER_OPEN'},{name:'PAPER_SKIP'},{name:'PAPER_SWITCHED'}] } },
     Source: { select: { options: [{name:'Open-Meteo'}] } },
     Notes: { rich_text: {} },
+    Row: { number: { format: 'number' } },
   };
   const toAdd = {};
   for (const [k,v] of Object.entries(needed)) {
