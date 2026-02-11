@@ -39,13 +39,17 @@ The database is expected to be shared with the integration.
 ## Changelog
 
 ### 2026-02-03
-- Added hard trade-quality filters: **minimum edge**, price tail avoidance, and skip markets too close to close.
+- Added hard trade-quality filters: **minimum edge**, price/probability band, and skip markets too close to close.
 - Added basic **risk management**: daily exposure cap, per-city exposure cap, and daily drawdown stop.
 - Resolver now handles `PAPER_STOP` and `PAPER_SWITCHED` statuses and writes `PnL` on resolve.
 - Added scripts to backfill: `recompute-cumpnl.js`, `fix-resolvedat.js`, and row numbering via `renumber-rows.js`.
 - Removed writing the Notion `Source` field (we always use Open-Meteo).
-- Stopped writing `ResolvedValue` (kept internal for calibration; the column can be hidden in Notion).
+- Stopped writing `ResolvedValue`.
 - Daily summary now includes **edge-bucket** performance.
+
+### 2026-02-11
+- Added stricter trade filters: require YES market prob in [0.15, 0.85] and |modelProb - marketProb| >= 0.08.
+- Added `edge-audit.js` and `rolling-report.js` for ongoing evaluation.
 
 ## Notes
 - Resolution sources are per Polymarket market descriptions (often Wunderground station history pages).

@@ -18,10 +18,11 @@ const SEARCH_TERMS = ['temperature', 'rain', 'precipitation', 'snow', 'wind'];
 const BASE_BANKROLL = 100;
 
 // Hard filters (avoid low-quality trades)
-const MIN_EDGE = 0.03;           // require at least +3% model edge
-const MIN_PRICE = 0.03;          // avoid extreme tails
-const MAX_PRICE = 0.97;
-const MIN_HOURS_TO_CLOSE = 3;    // avoid last-minute markets
+const MIN_EDGE = 0.03;              // require at least +3% model edge
+const MIN_PRICE = 0.15;             // tighter market-probability band (YES price)
+const MAX_PRICE = 0.85;
+const MIN_ABS_MODEL_DIFF = 0.08;    // require |modelProbYes - marketProbYes| >= 8%
+const MIN_HOURS_TO_CLOSE = 3;       // avoid last-minute markets
 
 // Risk management
 const MAX_DAILY_EXPOSURE_PCT = 0.05; // cap total open stake for today's date
@@ -454,8 +455,12 @@ async function main() {
         if (edgeYes > edgeNo) { side = 'YES'; price = yesPrice; edge = edgeYes; }
         else { side = 'NO'; price = noPrice; edge = edgeNo; }
 
-        // Guardrail: avoid extreme tail prices
-        if (price != null && (price < MIN_PRICE || price > MAX_PRICE)) continue;
+        // Guardrail: avoid tails using YES probability band (more stable)
+        const marketProbYes = yesPrice;
+        if (marketProbYes != null && (marketProbYes < MIN_PRICE || marketProbYes > MAX_PRICE)) continue;
+
+        // Require meaningful model vs market disagreement
+        if (Math.abs(modelProb - marketProbYes) < MIN_ABS_MODEL_DIFF) continue;
 
         // Only take trades with sufficient positive edge
         if (edge == null || edge < MIN_EDGE) continue;
