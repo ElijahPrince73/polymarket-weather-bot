@@ -29,7 +29,7 @@ async function clobPrice(tokenId){
     rows.push(...data.results); cursor=data.has_more?data.next_cursor:null;
   } while(cursor);
 
-  const open = rows.filter(r=> r.properties?.Status?.select?.name==='PAPER_OPEN');
+  const open = rows.filter(r=> r.properties?.Status?.select?.name==='PAPER_OPEN'); // only actively open positions
 
   for(const r of open){
     const q = r.properties?.Question?.rich_text?.[0]?.plain_text || '';

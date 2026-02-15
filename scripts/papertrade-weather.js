@@ -123,7 +123,7 @@ async function ensureNotionSchema() {
     Edge: { number: { format: 'number' } },
     SizePct: { number: { format: 'percent' } },
     StakeUsd: { number: { format: 'number' } },
-    Status: { select: { options: [{name:'PAPER_OPEN'},{name:'PAPER_SKIP'},{name:'PAPER_SWITCHED'},{name:'PAPER_STOP'}] } },
+    Status: { select: { options: [{name:'PAPER_OPEN'},{name:'PAPER_SKIP'},{name:'PAPER_SWITCHED'},{name:'PAPER_STOP'},{name:'PAPER_RESOLVED'}] } },
     Notes: { rich_text: {} },
     Row: { number: { format: 'number' } },
   };

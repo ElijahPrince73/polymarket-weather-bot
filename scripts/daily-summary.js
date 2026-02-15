@@ -40,7 +40,6 @@ async function main(){
 
   for(const r of rows){
     const status = r.properties?.Status?.select?.name;
-    if(status !== 'PAPER_OPEN') continue;
     const result = r.properties?.Result?.select?.name;
     const resolvedAt = r.properties?.ResolvedAt?.date?.start;
     if(!resolvedAt || resolvedAt.slice(0,10) !== today) continue;
