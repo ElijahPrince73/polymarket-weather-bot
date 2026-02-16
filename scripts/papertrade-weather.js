@@ -319,8 +319,11 @@ async function main() {
 
   const stopForDay = todaysRealizedPnl <= -STOP_DAILY_DD_PCT * bankroll;
 
-  // Prevent duplicates: treat ANY existing (non-skip) row for a city/date as already traded.
-  const existingByCityDate = new Set();
+  // Dedupe:
+  // - We never want to create multiple PAPER_SKIP placeholders for the same city/date.
+  // - But we DO want to allow a PAPER_OPEN trade later even if a prior run created a PAPER_SKIP.
+  const anyRowByCityDate = new Set();
+  const nonSkipByCityDate = new Set();
 
   // preload open trades by city/date + current exposures
   const openByCityDate = new Set();
@@ -336,8 +339,8 @@ async function main() {
 
     const key = `${cityName}|${date}`;
 
-    // anything except PAPER_SKIP counts as "already traded" for that city/date
-    if (status && status !== 'PAPER_SKIP') existingByCityDate.add(key);
+    anyRowByCityDate.add(key);
+    if (status && status !== 'PAPER_SKIP') nonSkipByCityDate.add(key);
 
     if (status !== 'PAPER_OPEN') continue;
     openByCityDate.add(key);
@@ -512,11 +515,12 @@ async function main() {
       bestEntries.forEach(b => {
         const key = `${b.city}|${b.date}`;
         // prevent repeats across runs if we already made ANY non-skip row for this city/date
-        if (!existingByCityDate.has(key)) logs.push(b);
+        if (!nonSkipByCityDate.has(key)) logs.push(b);
       });
     } else {
       const key = `${city.name}|${localDate}`;
-      if (!existingByCityDate.has(key)) {
+      // only log one placeholder skip per city/date
+      if (!anyRowByCityDate.has(key)) {
         logs.push({ city: city.name, q: 'No qualifying market', date: localDate, status: 'PAPER_SKIP', notes: 'No qualifying temperature market met filters', url: null });
       }
     }
