@@ -51,6 +51,11 @@ The database is expected to be shared with the integration.
 - Added stricter trade filters: require YES market prob in [0.15, 0.85] and |modelProb - marketProb| >= 0.08.
 - Added `edge-audit.js` and `rolling-report.js` for ongoing evaluation.
 
+### 2026-02-15
+- Prevent duplicates across runs by treating any existing non-skip row for a city/date as already traded.
+- Only trade **exact-value** highest-temperature questions (e.g. "Will the highest temperature in Seoul be 3°C on February 17?").
+- Disabled non-temp-max market types (precip/wind/etc) for now.
+
 ## Notes
 - Resolution sources are per Polymarket market descriptions (often Wunderground station history pages).
 - This is **paper trading** only.

@@ -265,6 +265,18 @@ function detectMarketType(question) {
   return null;
 }
 
+function isExactHighestTempQuestion(question){
+  const q = (question||'').toLowerCase();
+  if (!q.includes('highest temperature')) return false;
+  // allow: "be 3°C on February 17" or "be 35°F on ..."
+  const hasExact = /be\s+-?\d+\s*°?\s*[cf]\b/i.test(question);
+  if (!hasExact) return false;
+  // reject ranges / inequalities
+  if (q.includes('between') || q.includes('or higher') || q.includes('or above') || q.includes('or lower') || q.includes('or below')) return false;
+  if (/[\d]\s*[-–]\s*[\d]/.test(q)) return false;
+  return true;
+}
+
 async function main() {
   await ensureNotionSchema();
 
@@ -312,6 +324,9 @@ async function main() {
 
   const stopForDay = todaysRealizedPnl <= -STOP_DAILY_DD_PCT * bankroll;
 
+  // Prevent duplicates: treat ANY existing (non-skip) row for a city/date as already traded.
+  const existingByCityDate = new Set();
+
   // preload open trades by city/date + current exposures
   const openByCityDate = new Set();
   const openStakeByCityDate = new Map();
@@ -319,13 +334,17 @@ async function main() {
 
   for (const p of allRows) {
     const status = p.properties?.Status?.select?.name;
-    if (status !== 'PAPER_OPEN') continue;
     const cityName = p.properties?.City?.select?.name;
     const date = p.properties?.EventDate?.date?.start;
     const stake = p.properties?.StakeUsd?.number ?? 0;
     if (!cityName || !date) continue;
 
     const key = `${cityName}|${date}`;
+
+    // anything except PAPER_SKIP counts as "already traded" for that city/date
+    if (status && status !== 'PAPER_SKIP') existingByCityDate.add(key);
+
+    if (status !== 'PAPER_OPEN') continue;
     openByCityDate.add(key);
     openStakeByCityDate.set(key, (openStakeByCityDate.get(key) || 0) + stake);
     openStakeToday.set(date, (openStakeToday.get(date) || 0) + stake);
@@ -363,6 +382,11 @@ async function main() {
         if (dateStr && dateStr < localDate) continue; // skip past
         const type = detectMarketType(q);
         if (!type) continue;
+
+        // User requirement: only trade exact-value highest temperature questions.
+        if (type === 'temp_max' && !isExactHighestTempQuestion(q)) continue;
+        // (optional) disable other market types for now
+        if (type !== 'temp_max') continue;
 
         let modelProb = null;
         let notes = '';
@@ -493,12 +517,13 @@ async function main() {
     if (bestEntries.length) {
       bestEntries.forEach(b => {
         const key = `${b.city}|${b.date}`;
-        if (!openByCityDate.has(key)) logs.push(b);
+        // prevent repeats across runs if we already made ANY non-skip row for this city/date
+        if (!existingByCityDate.has(key)) logs.push(b);
       });
     } else {
       const key = `${city.name}|${localDate}`;
-      if (!openByCityDate.has(key)) {
-        logs.push({ city: city.name, q: 'No qualifying market', date: localDate, status: 'PAPER_SKIP', notes: 'No market met min edge threshold', url: null });
+      if (!existingByCityDate.has(key)) {
+        logs.push({ city: city.name, q: 'No qualifying market', date: localDate, status: 'PAPER_SKIP', notes: 'No qualifying exact-value highest-temperature market met filters', url: null });
       }
     }
   }
