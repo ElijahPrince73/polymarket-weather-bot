@@ -53,8 +53,8 @@ The database is expected to be shared with the integration.
 
 ### 2026-02-15
 - Prevent duplicates across runs by treating any existing non-skip row for a city/date as already traded.
-- Only trade **exact-value** highest-temperature questions (e.g. "Will the highest temperature in Seoul be 3°C on February 17?").
-- Disabled non-temp-max market types (precip/wind/etc) for now.
+- Trade **temperature markets only** (highest/lowest temperature), including exact values, ranges, and inequalities.
+- Disabled non-temperature market types (precip/wind/etc) for now.
 
 ## Notes
 - Resolution sources are per Polymarket market descriptions (often Wunderground station history pages).

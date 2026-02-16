@@ -265,16 +265,11 @@ function detectMarketType(question) {
   return null;
 }
 
-function isExactHighestTempQuestion(question){
+// Temperature market questions can be exact values, ranges, or inequalities.
+// We keep logic permissive here and rely on the parsing functions below.
+function isTemperatureQuestion(question){
   const q = (question||'').toLowerCase();
-  if (!q.includes('highest temperature')) return false;
-  // allow: "be 3°C on February 17" or "be 35°F on ..."
-  const hasExact = /be\s+-?\d+\s*°?\s*[cf]\b/i.test(question);
-  if (!hasExact) return false;
-  // reject ranges / inequalities
-  if (q.includes('between') || q.includes('or higher') || q.includes('or above') || q.includes('or lower') || q.includes('or below')) return false;
-  if (/[\d]\s*[-–]\s*[\d]/.test(q)) return false;
-  return true;
+  return q.includes('highest temperature') || q.includes('lowest temperature');
 }
 
 async function main() {
@@ -383,10 +378,9 @@ async function main() {
         const type = detectMarketType(q);
         if (!type) continue;
 
-        // User requirement: only trade exact-value highest temperature questions.
-        if (type === 'temp_max' && !isExactHighestTempQuestion(q)) continue;
-        // (optional) disable other market types for now
-        if (type !== 'temp_max') continue;
+        // User requirement: only trade temperature markets (no precip/wind/etc)
+        if (!isTemperatureQuestion(q)) continue;
+        if (type !== 'temp_max' && type !== 'temp_min') continue;
 
         let modelProb = null;
         let notes = '';
@@ -523,7 +517,7 @@ async function main() {
     } else {
       const key = `${city.name}|${localDate}`;
       if (!existingByCityDate.has(key)) {
-        logs.push({ city: city.name, q: 'No qualifying market', date: localDate, status: 'PAPER_SKIP', notes: 'No qualifying exact-value highest-temperature market met filters', url: null });
+        logs.push({ city: city.name, q: 'No qualifying market', date: localDate, status: 'PAPER_SKIP', notes: 'No qualifying temperature market met filters', url: null });
       }
     }
   }
