@@ -1,0 +1,19 @@
+{
+  "name": "polymarket-weather-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "cli": "node src/index.js",
+    "trade": "node src/index.js --trade",
+    "monitor": "node src/index.js --monitor",
+    "resolve": "node src/index.js --resolve",
+    "summary": "node src/index.js --summary",
+    "tick": "node src/index.js --tick"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.9.1",
+    "express": "^4.21.2"
+  }
+}

@@ -1,4 +1,7 @@
-calibration.json
-trades.json
+node_modules/
+data/
 *.log
 .DS_Store
+calibration.json
+trades.json
+server.log

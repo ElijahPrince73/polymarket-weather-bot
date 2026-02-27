@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Polymarket Weather Bot</title>
+    <style>
+      :root {
+        --bg: #0f1117;
+        --card: #1a1d27;
+        --text: #e6e8ef;
+        --muted: #8e95aa;
+        --accent: #3b82f6;
+        --green: #22c55e;
+        --red: #ef4444;
+        --border: #2a3142;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      .num {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        white-space: nowrap;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 24px;
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--green);
+        box-shadow: 0 0 12px var(--green);
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+
+      .stat {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+      }
+
+      .label {
+        color: var(--muted);
+        font-size: 12px;
+        margin-bottom: 6px;
+      }
+
+      .value {
+        font-size: 20px;
+        font-weight: 700;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1.3fr 1fr;
+        gap: 16px;
+      }
+
+      .stack {
+        display: grid;
+        gap: 16px;
+      }
+
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+      }
+
+      .card h2 {
+        margin: 0 0 10px;
+        font-size: 16px;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      th,
+      td {
+        text-align: left;
+        padding: 8px 6px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      th {
+        color: var(--muted);
+        font-weight: 500;
+      }
+
+      .truncate {
+        max-width: 320px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .positive {
+        color: var(--green);
+      }
+
+      .negative {
+        color: var(--red);
+      }
+
+      .log {
+        font-size: 14px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      @media (max-width: 960px) {
+        .stats {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>Polymarket Weather Bot</h1>
+        <div class="status"><span class="dot"></span><span id="run-status">Running</span></div>
+      </div>
+
+      <section class="stats">
+        <div class="stat"><div class="label">Bankroll</div><div class="value num" id="bankroll">-</div></div>
+        <div class="stat"><div class="label">Open Trades</div><div class="value num" id="open-trades">-</div></div>
+        <div class="stat"><div class="label">Win Rate (30d)</div><div class="value num" id="winrate">-</div></div>
+        <div class="stat"><div class="label">Total PnL (30d)</div><div class="value num" id="pnl">-</div></div>
+        <div class="stat"><div class="label">ROI (30d)</div><div class="value num" id="roi">-</div></div>
+      </section>
+
+      <section class="grid">
+        <div class="stack">
+          <article class="card">
+            <h2>Open Positions</h2>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>City</th>
+                    <th>Date</th>
+                    <th>Side</th>
+                    <th>Entry Price</th>
+                    <th>Edge</th>
+                    <th>Stake</th>
+                    <th>Question</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="open-body"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="card">
+            <h2>Recent Resolved</h2>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>City</th>
+                    <th>Date</th>
+                    <th>Side</th>
+                    <th>Result</th>
+                    <th>PnL</th>
+                    <th>Entry Price</th>
+                    <th>Question</th>
+                    <th>Resolved</th>
+                  </tr>
+                </thead>
+                <tbody id="resolved-body"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+
+        <div class="stack">
+          <article class="card">
+            <h2>Performance by City</h2>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>City</th>
+                    <th>Trades</th>
+                    <th>Wins</th>
+                    <th>Losses</th>
+                    <th>PnL</th>
+                    <th>ROI</th>
+                  </tr>
+                </thead>
+                <tbody id="city-body"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="card">
+            <h2>Edge Bucket Performance</h2>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Bucket</th>
+                    <th>Trades</th>
+                    <th>PnL</th>
+                    <th>ROI</th>
+                  </tr>
+                </thead>
+                <tbody id="bucket-body"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="card">
+            <h2>Calibration</h2>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>City</th>
+                    <th>Market Type</th>
+                    <th>Bias</th>
+                    <th>Last Updated</th>
+                  </tr>
+                </thead>
+                <tbody id="cal-body"></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="card" style="margin-top: 16px">
+        <h2>Activity Log</h2>
+        <div class="log" id="activity-log">Loading...</div>
+      </section>
+    </div>
+
+    <script>
+      const fmtUsd = (n) => (n == null ? "-" : `$${Number(n).toFixed(2)}`);
+      const fmtPct = (n) => (n == null ? "-" : `${(Number(n) * 100).toFixed(1)}%`);
+      const fmtNum = (n, d = 3) => (n == null ? "-" : Number(n).toFixed(d));
+      const fmtDate = (s) => (s ? new Date(s).toLocaleString() : "-");
+      const fmtEventDate = (s) => {
+        if (!s) return "-";
+        const [, m, d] = s.split("-");
+        return `${m}/${d}`;
+      };
+
+      function row(cells) {
+        return `<tr>${cells.map((x) => `<td>${x}</td>`).join("")}</tr>`;
+      }
+
+      async function loadDashboard() {
+        const [status, summary, openTrades, allTrades, calibration] = await Promise.all([
+          fetch("/api/status").then((r) => r.json()),
+          fetch("/api/summary").then((r) => r.json()),
+          fetch("/api/trades?status=OPEN").then((r) => r.json()),
+          fetch("/api/trades").then((r) => r.json()),
+          fetch("/api/calibration").then((r) => r.json()),
+        ]);
+
+        const rolling = summary.rolling || {};
+        document.getElementById("bankroll").textContent = fmtUsd(status.bankroll);
+        document.getElementById("open-trades").textContent = status.openTrades ?? 0;
+        document.getElementById("winrate").textContent = fmtPct(rolling.winrate);
+        document.getElementById("pnl").textContent = fmtUsd(rolling.pnl);
+        document.getElementById("roi").textContent = fmtPct(rolling.roi);
+
+        document.getElementById("open-body").innerHTML = openTrades
+          .map((t) =>
+            row([
+              t.city || "-",
+              fmtEventDate(t.event_date),
+              t.side || "-",
+              `<span class="num">${fmtNum(t.entry_price, 3)}</span>`,
+              `<span class="num ${t.edge > 0 ? "positive" : ""}">${fmtNum(t.edge, 3)}</span>`,
+              `<span class="num">${fmtUsd(t.stake_usd)}</span>`,
+              `<span class="truncate" title="${(t.question || "").replace(/"/g, "&quot;")}">${t.question || "-"}</span>`,
+              t.status || "-",
+            ])
+          )
+          .join("");
+
+        const resolved = allTrades.filter((t) => t.result === "WIN" || t.result === "LOSS").slice(0, 20);
+        document.getElementById("resolved-body").innerHTML = resolved
+          .map((t) =>
+            row([
+              t.city || "-",
+              fmtEventDate(t.event_date),
+              t.side || "-",
+              `<span class="${t.result === "WIN" ? "positive" : "negative"}">${t.result}</span>`,
+              `<span class="num ${t.pnl >= 0 ? "positive" : "negative"}">${fmtUsd(t.pnl)}</span>`,
+              `<span class="num">${fmtNum(t.entry_price, 3)}</span>`,
+              `<span class="truncate" title="${(t.question || "").replace(/"/g, "&quot;")}">${t.question || "-"}</span>`,
+              fmtDate(t.resolved_at),
+            ])
+          )
+          .join("");
+
+        const byCity = Object.entries(rolling.byCity || {});
+        document.getElementById("city-body").innerHTML = byCity
+          .map(([city, v]) =>
+            row([
+              city,
+              `<span class="num">${v.trades ?? 0}</span>`,
+              `<span class="num">${v.wins ?? 0}</span>`,
+              `<span class="num">${v.losses ?? 0}</span>`,
+              `<span class="num ${(v.pnl || 0) >= 0 ? "positive" : "negative"}">${fmtUsd(v.pnl)}</span>`,
+              `<span class="num">${fmtPct(v.roi)}</span>`,
+            ])
+          )
+          .join("");
+
+        const byBucket = Object.entries(rolling.byEdgeTrueBucket || {});
+        document.getElementById("bucket-body").innerHTML = byBucket
+          .map(([bucket, v]) =>
+            row([
+              bucket,
+              `<span class="num">${v.trades ?? 0}</span>`,
+              `<span class="num ${(v.pnl || 0) >= 0 ? "positive" : "negative"}">${fmtUsd(v.pnl)}</span>`,
+              `<span class="num">${fmtPct(v.roi)}</span>`,
+            ])
+          )
+          .join("");
+
+        document.getElementById("cal-body").innerHTML = calibration
+          .map((c) =>
+            row([
+              c.city || "-",
+              c.market_type || "-",
+              `<span class="num">${fmtNum(c.bias, 4)}</span>`,
+              fmtDate(c.updated_at),
+            ])
+          )
+          .join("");
+
+        document.getElementById("activity-log").textContent =
+          `Last tick: ${fmtDate(status.lastTickAt)} | Rolling 30d: ${rolling.trades ?? 0} trades, ` +
+          `${rolling.wins ?? 0} wins, ${rolling.losses ?? 0} losses, PnL ${fmtUsd(rolling.pnl)}.`;
+      }
+
+      async function refresh() {
+        try {
+          await loadDashboard();
+          document.getElementById("run-status").textContent = "Running";
+        } catch (err) {
+          document.getElementById("run-status").textContent = "Error";
+          document.getElementById("activity-log").textContent = `Dashboard fetch error: ${err.message}`;
+        }
+      }
+
+      refresh();
+      setInterval(refresh, 60000);
+    </script>
+  </body>
+</html>
