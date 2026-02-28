@@ -20,6 +20,7 @@ import {
   pickDailyForDate,
   searchMarkets,
 } from "./discovery.js";
+import { getBalance as getLiveBalance, isLiveMode, placeBuyOrder } from "./exchange.js";
 import {
   detectMarketType,
   fmtDateInTz,
@@ -49,7 +50,11 @@ function kellySize(modelProb, entryPrice, side) {
 }
 
 export async function runTradeDiscovery(dbApi = db) {
-  const bankroll = dbApi.getBankroll();
+  let bankroll = await dbApi.getBankroll();
+  if (isLiveMode()) {
+    const liveBalance = await getLiveBalance();
+    if (liveBalance != null) bankroll = liveBalance;
+  }
   const todayPnl = dbApi.getTodayResolvedPnl();
   const stopForDay = todayPnl <= -STOP_DAILY_DD_PCT * bankroll;
 
@@ -184,6 +189,7 @@ export async function runTradeDiscovery(dbApi = db) {
         const side = edgeYes > edgeNo ? "YES" : "NO";
         const price = side === "YES" ? yesPrice : noPrice;
         const edge = side === "YES" ? edgeYes : edgeNo;
+        const tokenId = side === "YES" ? tokenIds[yesIdx] : tokenIds[noIdx];
         const marketProbYes = yesPrice;
 
         if (marketProbYes < MIN_PRICE || marketProbYes > MAX_PRICE) continue;
@@ -217,6 +223,9 @@ export async function runTradeDiscovery(dbApi = db) {
           status: "OPEN",
           result: "PENDING",
           notes,
+          token_id: tokenId ?? null,
+          condition_id: market.conditionId ?? null,
+          neg_risk: market.negRisk ? 1 : 0,
         };
         const currentBest = bestByDate.get(candidateDate);
         if (!currentBest || candidate.edge > currentBest.edge) bestByDate.set(candidateDate, candidate);
@@ -246,6 +255,27 @@ export async function runTradeDiscovery(dbApi = db) {
     }
   }
 
-  for (const log of logs) dbApi.insertTrade(log);
+  for (const candidate of logs) {
+    const insertResult = dbApi.insertTrade(candidate);
+    if (isLiveMode() && candidate.status === "OPEN" && candidate.token_id) {
+      const result = await placeBuyOrder(candidate.token_id, candidate.entry_price, candidate.stake_usd);
+      if (result.success) {
+        dbApi.updateTrade(insertResult.lastInsertRowid, {
+          order_id: result.orderId,
+          fill_size: result.size,
+          notes: `${candidate.notes ?? ""} | LIVE order ${result.orderId}`,
+        });
+        console.log(
+          `[LIVE] Placed BUY order ${result.orderId} for ${candidate.city} ${candidate.side} @ ${candidate.entry_price}`
+        );
+      } else {
+        dbApi.updateTrade(insertResult.lastInsertRowid, {
+          status: "SKIP",
+          notes: `${candidate.notes ?? ""} | LIVE order FAILED: ${result.error}`,
+        });
+        console.error(`[LIVE] Order failed for ${candidate.city}: ${result.error}`);
+      }
+    }
+  }
   return { openedOrLogged: logs.length, stopForDay, bankroll: bankroll || BASE_BANKROLL };
 }

@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import Database from "better-sqlite3";
 import { BASE_BANKROLL, DB_PATH } from "./config.js";
+import { getBalance as getLiveBalance, isLiveMode } from "./services/exchange.js";
 
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
@@ -25,6 +26,11 @@ sqlite.exec(`
     result TEXT CHECK (result IN ('PENDING', 'WIN', 'LOSS')),
     pnl REAL,
     notes TEXT,
+    token_id TEXT,
+    order_id TEXT,
+    fill_size INTEGER,
+    condition_id TEXT,
+    neg_risk INTEGER DEFAULT 0,
     resolved_at TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
   );
@@ -39,14 +45,31 @@ sqlite.exec(`
   );
 `);
 
+function runTradeColumnMigration() {
+  const alterStatements = [
+    `ALTER TABLE trades ADD COLUMN token_id TEXT;`,
+    `ALTER TABLE trades ADD COLUMN order_id TEXT;`,
+    `ALTER TABLE trades ADD COLUMN fill_size INTEGER;`,
+    `ALTER TABLE trades ADD COLUMN condition_id TEXT;`,
+    `ALTER TABLE trades ADD COLUMN neg_risk INTEGER DEFAULT 0;`,
+  ];
+  for (const sql of alterStatements) {
+    try {
+      sqlite.exec(sql);
+    } catch {}
+  }
+}
+
+runTradeColumnMigration();
+
 const insertTradeStmt = sqlite.prepare(`
   INSERT INTO trades (
     city, station, question, market_url, event_date, side, entry_price, model_prob, edge,
-    size_pct, stake_usd, status, result, pnl, notes, resolved_at
+    size_pct, stake_usd, status, result, pnl, notes, token_id, order_id, fill_size, condition_id, neg_risk, resolved_at
   )
   VALUES (
     @city, @station, @question, @market_url, @event_date, @side, @entry_price, @model_prob, @edge,
-    @size_pct, @stake_usd, @status, @result, @pnl, @notes, @resolved_at
+    @size_pct, @stake_usd, @status, @result, @pnl, @notes, @token_id, @order_id, @fill_size, @condition_id, @neg_risk, @resolved_at
   )
 `);
 
@@ -67,6 +90,11 @@ export function insertTrade(trade) {
     result: trade.result ?? "PENDING",
     pnl: trade.pnl ?? null,
     notes: trade.notes ?? null,
+    token_id: trade.token_id ?? null,
+    order_id: trade.order_id ?? null,
+    fill_size: trade.fill_size ?? null,
+    condition_id: trade.condition_id ?? null,
+    neg_risk: trade.neg_risk ?? 0,
     resolved_at: trade.resolved_at ?? null,
   };
   return insertTradeStmt.run(row);
@@ -88,6 +116,11 @@ const updatableColumns = new Set([
   "result",
   "pnl",
   "notes",
+  "token_id",
+  "order_id",
+  "fill_size",
+  "condition_id",
+  "neg_risk",
   "resolved_at",
 ]);
 
@@ -122,11 +155,19 @@ export function getTodayResolvedPnl(todayIso = new Date().toISOString().slice(0,
   return row?.pnl ?? 0;
 }
 
-export function getBankroll() {
+function getPaperBankroll() {
   const row = sqlite
     .prepare(`SELECT COALESCE(SUM(pnl), 0) AS realized_pnl FROM trades WHERE result IN ('WIN', 'LOSS')`)
     .get();
   return BASE_BANKROLL + (row?.realized_pnl ?? 0);
+}
+
+export async function getBankroll() {
+  if (isLiveMode()) {
+    const liveBalance = await getLiveBalance();
+    if (liveBalance != null) return liveBalance;
+  }
+  return getPaperBankroll();
 }
 
 export function getAllResolved() {

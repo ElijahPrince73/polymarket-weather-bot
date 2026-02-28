@@ -7,6 +7,7 @@ import { runMonitor } from "./services/monitor.js";
 import { dailySummary, rollingReport } from "./services/reporter.js";
 import { runResolver } from "./services/resolver.js";
 import { runTradeDiscovery } from "./services/trader.js";
+import { cancelOrder, getBalance, getOpenOrders, isLiveMode } from "./services/exchange.js";
 
 const app = express();
 const port = Number.parseInt(process.env.PORT || "3001", 10);
@@ -17,6 +18,7 @@ const publicDir = path.resolve(__dirname, "..", "public");
 const startedAt = Date.now();
 const tickIntervalMs = 30 * 60 * 1000;
 const tradingEnabled = config.MIN_EDGE >= 0;
+let displayTradingMode = isLiveMode() ? "live" : "paper";
 let lastTickAt = null;
 let lastTickResult = null;
 let tickInFlight = null;
@@ -50,10 +52,16 @@ async function runTickCycle() {
   return tickInFlight;
 }
 
-app.get("/api/status", (_req, res) => {
+app.get("/api/status", async (_req, res) => {
+  const live = isLiveMode();
+  const bankroll = await db.getBankroll();
+  const liveBalance = live ? await getBalance() : null;
   res.json({
     tradingEnabled,
-    bankroll: db.getBankroll(),
+    tradingMode: displayTradingMode,
+    envTradingMode: live ? "live" : "paper",
+    bankroll,
+    liveBalance,
     openTrades: db.getOpenTrades().length,
     uptime: Math.floor((Date.now() - startedAt) / 1000),
     lastTickAt,
@@ -97,6 +105,55 @@ app.post("/api/tick", async (_req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error?.message || "Tick failed" });
+  }
+});
+
+app.post("/api/mode", (req, res) => {
+  const mode = String(req.body?.mode || "").toLowerCase();
+  if (mode !== "paper" && mode !== "live") {
+    res.status(400).json({ error: 'Mode must be "paper" or "live"' });
+    return;
+  }
+  displayTradingMode = mode;
+  res.json({
+    ok: true,
+    tradingMode: displayTradingMode,
+    envTradingMode: isLiveMode() ? "live" : "paper",
+    note: "Display mode updated. Actual trading mode is controlled by TRADING_MODE env.",
+  });
+});
+
+app.post("/api/kill", async (_req, res) => {
+  try {
+    const orders = await getOpenOrders();
+    const cancelled = [];
+    const cancelErrors = [];
+    for (const order of orders) {
+      const id = order?.id ?? order?.orderID ?? order?.orderId;
+      if (!id) continue;
+      const result = await cancelOrder(id);
+      if (result.success) cancelled.push(id);
+      else cancelErrors.push({ id, error: result.error });
+    }
+
+    const skipped = db.sqlite
+      .prepare(
+        `UPDATE trades
+         SET status='SKIP',
+             notes=COALESCE(notes, '') || ' | KILL switch ' || CURRENT_TIMESTAMP
+         WHERE status='OPEN'`
+      )
+      .run();
+
+    res.json({
+      ok: true,
+      openOrdersFound: orders.length,
+      cancelledCount: cancelled.length,
+      cancelErrors,
+      openTradesMarkedSkip: skipped.changes,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || "Kill switch failed" });
   }
 });
 

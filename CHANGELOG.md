@@ -1,5 +1,42 @@
 # CHANGELOG
 
+## 2026-02-28 — Live Polymarket CLOB Integration
+
+### Production Trading
+- **New:** `src/services/exchange.js` — CLOB client (buy/sell/cancel/balance)
+  - Uses `@polymarket/clob-client` + `ethers@5` + `dotenv`
+  - Same wallet credentials as BTC bot (shared .env)
+  - `isLiveMode()` checks `TRADING_MODE` env var (default: paper)
+- **Updated** `src/db.js`:
+  - Added columns: `token_id`, `order_id`, `fill_size`, `condition_id`, `neg_risk`
+  - Migration auto-runs ALTER TABLE (safe for existing DBs)
+  - `getBankroll()` now async — returns live USDC balance in live mode
+- **Updated** `src/services/trader.js`:
+  - Stores `token_id`, `condition_id`, `neg_risk` on each trade candidate
+  - In live mode: places real GTC BUY orders via CLOB after discovery
+  - Uses real USDC balance for position sizing in live mode
+- **Updated** `src/services/monitor.js`:
+  - Stop-loss + switch now place SELL orders in live mode
+- **Updated** `src/server.js`:
+  - `/api/status` includes `tradingMode`, `liveBalance`
+  - `POST /api/kill` — emergency kill switch (cancels all CLOB orders, stops all trades)
+  - `POST /api/mode` — display mode toggle
+- **Updated** `public/index.html`:
+  - PAPER (yellow) / LIVE (green) badge in header
+  - Red KILL SWITCH button (visible in live mode)
+  - Shows live USDC balance when in live mode
+- **Created** `.env.example` with all required env vars
+- **Added** `.env` to `.gitignore`
+- **Dependencies:** `@polymarket/clob-client`, `ethers@5`, `dotenv`
+
+### How to Go Live
+1. Ensure `.env` has valid CLOB credentials (copied from BTC bot)
+2. Change `TRADING_MODE=live` in `.env`
+3. Restart: `npm start`
+4. Bot will use real USDC balance and place real orders
+5. Kill switch available on dashboard or `POST /api/kill`
+
+
 ## 2026-02-27 — Full Rewrite & Upgrades
 
 ### Phase 1: Project Rewrite (from scratch)

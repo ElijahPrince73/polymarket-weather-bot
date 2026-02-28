@@ -173,7 +173,11 @@
     <div class="container">
       <div class="header">
         <h1>Polymarket Weather Bot</h1>
-        <div class="status"><span class="dot"></span><span id="run-status">Running</span></div>
+        <div class="status">
+          <span class="dot"></span><span id="run-status">Running</span>
+          <span id="mode-badge" style="margin-left:12px;padding:2px 10px;border-radius:9999px;font-size:12px;font-weight:600;text-transform:uppercase"></span>
+          <button id="kill-btn" onclick="killSwitch()" style="margin-left:12px;background:#ef4444;color:#fff;border:none;padding:4px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;display:none">KILL SWITCH</button>
+        </div>
       </div>
 
       <section class="stats">
@@ -395,9 +399,42 @@
           `${rolling.wins ?? 0} wins, ${rolling.losses ?? 0} losses, PnL ${fmtUsd(rolling.pnl)}.`;
       }
 
+      function updateModeBadge(status) {
+        const badge = document.getElementById("mode-badge");
+        const killBtn = document.getElementById("kill-btn");
+        const mode = status.tradingMode || status.envTradingMode || "paper";
+        badge.textContent = mode;
+        if (mode === "live") {
+          badge.style.background = "#22c55e";
+          badge.style.color = "#000";
+          killBtn.style.display = "inline-block";
+        } else {
+          badge.style.background = "#eab308";
+          badge.style.color = "#000";
+          killBtn.style.display = "none";
+        }
+        if (status.liveBalance != null) {
+          document.getElementById("bankroll").textContent = fmtUsd(status.liveBalance) + " USDC";
+        }
+      }
+
+      async function killSwitch() {
+        if (!confirm("KILL SWITCH: Cancel all orders and stop all trades?")) return;
+        try {
+          const r = await fetch("/api/kill", { method: "POST" });
+          const data = await r.json();
+          alert("Killed. Cancelled " + (data.cancelledCount || 0) + " orders, stopped " + (data.openTradesMarkedSkip || 0) + " trades.");
+          refresh();
+        } catch (e) {
+          alert("Kill switch error: " + e.message);
+        }
+      }
+
       async function refresh() {
         try {
           await loadDashboard();
+          const status = await fetch("/api/status").then(r => r.json());
+          updateModeBadge(status);
           document.getElementById("run-status").textContent = "Running";
         } catch (err) {
           document.getElementById("run-status").textContent = "Error";

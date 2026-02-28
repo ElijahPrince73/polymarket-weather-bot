@@ -1,6 +1,7 @@
 import db from "../db.js";
 import { fetchJson } from "../utils.js";
 import { clobPrice } from "./discovery.js";
+import { isLiveMode, placeSellOrder } from "./exchange.js";
 
 function extractEventSlug(url) {
   const m = String(url || "").match(/polymarket\.com\/event\/([^/?#]+)/i);
@@ -61,9 +62,16 @@ export async function runMonitor(dbApi = db) {
     if (row.entry_price != null) {
       const current = row.side === "YES" ? yesPrice : noPrice;
       if (current <= row.entry_price * 0.8) {
+        let stopNote = `Stop-loss hit at ${current} (entry ${row.entry_price})`;
+        if (isLiveMode() && row.token_id && Number(row.fill_size) > 0) {
+          const sellResult = await placeSellOrder(row.token_id, current, Number(row.fill_size));
+          stopNote += sellResult.success
+            ? ` | LIVE sell ${sellResult.orderId}`
+            : ` | LIVE sell FAILED: ${sellResult.error}`;
+        }
         dbApi.updateTrade(row.id, {
           status: "STOP",
-          notes: `Stop-loss hit at ${current} (entry ${row.entry_price})`,
+          notes: stopNote,
         });
         updated += 1;
         continue;
@@ -71,9 +79,18 @@ export async function runMonitor(dbApi = db) {
     }
 
     if (edgeExisting < -0.05 && edgeOpp >= 0.05) {
+      const currentPrice = row.side === "YES" ? yesPrice : noPrice;
+      let switchNote = `Switched to ${oppSide} at ${new Date().toISOString()}`;
+      if (isLiveMode() && row.token_id && Number(row.fill_size) > 0) {
+        const sellResult = await placeSellOrder(row.token_id, currentPrice, Number(row.fill_size));
+        switchNote += sellResult.success
+          ? ` | LIVE sell ${sellResult.orderId}`
+          : ` | LIVE sell FAILED: ${sellResult.error}`;
+      }
+
       dbApi.updateTrade(row.id, {
         status: "SWITCHED",
-        notes: `Switched to ${oppSide} at ${new Date().toISOString()}`,
+        notes: switchNote,
       });
       dbApi.insertTrade({
         city: row.city,
@@ -90,6 +107,9 @@ export async function runMonitor(dbApi = db) {
         status: "OPEN",
         result: "PENDING",
         notes: `Switch from ${row.side}`,
+        token_id: oppSide === "YES" ? tokenIds[yesIdx] ?? null : tokenIds[noIdx] ?? null,
+        condition_id: market.conditionId ?? row.condition_id ?? null,
+        neg_risk: market.negRisk ? 1 : 0,
       });
       updated += 1;
       switched += 1;
